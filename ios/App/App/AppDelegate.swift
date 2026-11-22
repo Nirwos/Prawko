@@ -1,5 +1,6 @@
 import UIKit
 import Capacitor
+import AuthenticationServices
 
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate {
@@ -46,4 +47,58 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         return ApplicationDelegateProxy.shared.application(application, continue: userActivity, restorationHandler: restorationHandler)
     }
 
+}
+
+class MainViewController: CAPBridgeViewController {
+    override func capacitorDidLoad() {
+        bridge?.registerPluginInstance(AuthSessionPlugin())
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        webView?.scrollView.bouncesZoom = false
+        webView?.scrollView.pinchGestureRecognizer?.isEnabled = false
+    }
+}
+
+@objc(AuthSessionPlugin)
+public class AuthSessionPlugin: CAPPlugin, CAPBridgedPlugin, ASWebAuthenticationPresentationContextProviding {
+    public let identifier = "AuthSessionPlugin"
+    public let jsName = "AuthSession"
+    public let pluginMethods: [CAPPluginMethod] = [
+        CAPPluginMethod(name: "start", returnType: CAPPluginReturnPromise)
+    ]
+
+    private var session: ASWebAuthenticationSession?
+
+    @objc func start(_ call: CAPPluginCall) {
+        guard let raw = call.getString("url"), let url = URL(string: raw),
+              let scheme = call.getString("callbackScheme"), !scheme.isEmpty else {
+            call.reject("Brak adresu logowania", "INVALID")
+            return
+        }
+        DispatchQueue.main.async {
+            let session = ASWebAuthenticationSession(url: url, callbackURLScheme: scheme) { [weak self] callbackURL, error in
+                self?.session = nil
+                if let callbackURL = callbackURL {
+                    call.resolve(["url": callbackURL.absoluteString])
+                } else if let authError = error as? ASWebAuthenticationSessionError, authError.code == .canceledLogin {
+                    call.reject("Anulowano logowanie", "CANCELED")
+                } else {
+                    call.reject(error?.localizedDescription ?? "Logowanie nie powiodło się", "FAILED")
+                }
+            }
+            session.presentationContextProvider = self
+            session.prefersEphemeralWebBrowserSession = false
+            self.session = session
+            if !session.start() {
+                self.session = nil
+                call.reject("Nie udało się otworzyć logowania", "FAILED")
+            }
+        }
+    }
+
+    public func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
+        return bridge?.viewController?.view.window ?? ASPresentationAnchor()
+    }
 }
