@@ -1,0 +1,13 @@
+node_modules/
+release/
+*.keystore
+keystore.properties
+android/.gradle-home/
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+ios/App/build/
+ios/App/Payload/
+*.ipa
+.DS_Store
